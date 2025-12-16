@@ -1,72 +1,98 @@
-import puppeteer from 'puppeteer';
+import puppeteer, { Browser, Page } from 'puppeteer';
 import { generateText } from 'ai';
 import { google } from '@ai-sdk/google';
 
-async function summarizeWebsite(url: string) {
-  let browser;
+type BrowserContext = {
+  browser: Browser;
+  page: Page;
+};
+
+const USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
+
+const MODEL = google('gemini-2.5-flash');
+
+async function createBrowserContext(): Promise<BrowserContext> {
+  const browser = await puppeteer.launch({ headless: 'new' });
+  const page = await browser.newPage();
+  await page.setUserAgent(USER_AGENT);
+  return { browser, page };
+}
+
+async function navigate(page: Page, url: string): Promise<void> {
+  await page.goto(url, { waitUntil: 'networkidle0', timeout: 60000 });
+}
+
+async function extractText(page: Page): Promise<string> {
+  const text = await page.evaluate(() => {
+    const candidates = ['article', 'main', 'body'];
+    for (const selector of candidates) {
+      const node = document.querySelector(selector);
+      if (node && node.innerText.length > 50) {
+        return node.innerText;
+      }
+    }
+    return document.body?.innerText ?? '';
+  });
+
+  return text.replace(/\s\s+/g, ' ').trim();
+}
+
+function buildPrompt(content: string): string {
+  return `
+Provide a concise two-paragraph summary of the following webpage.
+Focus on the main topic, key insights, and conclusions.
+
+Content:
+${content}
+`.trim();
+}
+
+async function summarize(content: string): Promise<string> {
+  const { text } = await generateText({
+    model: MODEL,
+    prompt: buildPrompt(content),
+  });
+
+  return text;
+}
+
+async function withBrowser<T>(
+  fn: (ctx: BrowserContext) => Promise<T>
+): Promise<T> {
+  const ctx = await createBrowserContext();
   try {
-    console.log(`Launching browser and navigating to: ${url}`);
-     browser = await puppeteer.launch({ headless: 'new' });
-    const page = await browser.newPage();
-    
-     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
-
-     await page.goto(url, { waitUntil: 'networkidle0', timeout: 60000 });
-    
-    console.log('Page loaded. Extracting main text content...');
-
-    const pageText = await page.evaluate(() => {
-      const selectors = ['article', 'main', 'body'];
-      let content = '';
-
-      for (const selector of selectors) {
-        const element = document.querySelector(selector);
-        if (element) {
-          content = element.innerText;
-          break; // Use the most specific selector found
-        }
-      }
-
-       if (!content || content.length < 50) {
-        content = document.body.innerText;
-      }
-
-       return content.replace(/\s\s+/g, ' ').trim();
-    });
-
-    if (!pageText) {
-        throw new Error('Could not extract meaningful text from the page.');
-    }
-    
-    console.log(`Extracted content size: ${pageText.length} characters.`);
-    console.log('Sending content to AI model for summarization...');
-
-    const prompt = `Please provide a concise, two-paragraph summary of the following web page content. Focus on the main topic, key takeaways, and any conclusions presented. Content: ${pageText}`;
-
-    const { text: summary } = await generateText({
-      model: google('gemini-2.5-flash'), 
-      prompt: prompt,
-    });
-
-    console.log('\n--- Website Summary ---');
-    console.log(summary);
-    console.log('-----------------------\n');
-
-  } catch (error) {
-    console.error('An error occurred during the process:', error);
+    return await fn(ctx);
   } finally {
-    if (browser) {
-      await browser.close();
-      console.log('Browser closed.');
-    }
+    await ctx.browser.close();
   }
 }
 
-const targetUrl = process.argv[2];
+async function summarizeWebsite(url: string): Promise<void> {
+  await withBrowser(async ({ page }) => {
+    await navigate(page, url);
 
-if (!targetUrl) {
-  console.error('Usage: ts-node summarize.ts <URL_TO_SUMMARIZE>');
+    const content = await extractText(page);
+    if (!content) {
+      throw new Error('No meaningful content extracted');
+    }
+
+    const summary = await summarize(content);
+
+    console.log('\n--- Website Summary ---\n');
+    console.log(summary);
+    console.log('\n-----------------------\n');
+  });
+}
+
+const url = process.argv[2];
+
+if (!url) {
+  console.error('Usage: ts-node summarize.ts <URL>');
   process.exit(1);
 }
 
-summarizeWebsite(targetUrl);
+summarizeWebsite(url).catch((err) => {
+  console.error('Failed to summarize website:', err);
+  process.exit(1);
+});

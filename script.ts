@@ -58,18 +58,83 @@ async function extractMetadata(page: Page): Promise<PageMetadata> {
   };
 }
 
+function removeDuplicateLines(text: string): string {
+  const seen = new Set<string>();
+
+  return text
+    .split('\n')
+    .filter((line) => {
+      const normalized = line.trim().toLowerCase();
+      if (normalized.length < 30) return true;
+      if (seen.has(normalized)) return false;
+      seen.add(normalized);
+      return true;
+    })
+    .join('\n');
+}
+
 async function extractText(page: Page): Promise<string> {
   const text = await page.evaluate(() => {
-    const candidates = ['article', 'main', 'body'];
-    for (const selector of candidates) {
-      const node = document.querySelector(selector);
-      if (node && node.innerText.length > 50) {
-        return node.innerText;
+    const NOISE_SELECTORS = [
+      'nav',
+      'footer',
+      'aside',
+      'script',
+      'style',
+      'noscript',
+      'iframe',
+      'header',
+      '[role="navigation"]',
+      '[aria-label="breadcrumb"]',
+      '.cookie',
+      '.cookies',
+      '.cookie-banner',
+      '.consent',
+      '.ads',
+      '.advert',
+      '.advertisement',
+      '.promo',
+      '.popup',
+      '.modal',
+    ];
+
+    NOISE_SELECTORS.forEach((selector) => {
+      document.querySelectorAll(selector).forEach((el) => el.remove());
+    });
+
+    const CANDIDATES = [
+      'article',
+      'main',
+      '[role="main"]',
+      '.content',
+      '.post',
+      '.article',
+    ];
+
+    let bestText = '';
+
+    for (const selector of CANDIDATES) {
+      const el = document.querySelector(selector);
+      if (!el) continue;
+      const text = el.innerText.trim();
+      if (text.length > bestText.length) {
+        bestText = text;
       }
     }
-    return document.body?.innerText ?? '';
+
+    if (!bestText || bestText.length < 200) {
+      bestText = document.body?.innerText ?? '';
+    }
+
+    return bestText;
   });
-  return text.replace(/\s\s+/g, ' ').trim();
+
+  return removeDuplicateLines(
+    text
+      .replace(/\n{3,}/g, '\n\n')
+      .replace(/[ \t]{2,}/g, ' ')
+      .trim()
+  );
 }
 
 function buildPrompt(content: string, options: SummaryOptions): string {
@@ -129,7 +194,10 @@ async function summarizeWebsite(url: string, options: SummaryOptions = {}): Prom
   await withBrowser(async ({ page }) => {
     await navigate(page, url);
 
-    const [content, metadata] = await Promise.all([extractText(page), extractMetadata(page)]);
+    const [content, metadata] = await Promise.all([
+      extractText(page),
+      extractMetadata(page),
+    ]);
 
     if (!content) {
       throw new Error('No meaningful content extracted');
@@ -171,16 +239,11 @@ function parseArgs(): { url: string; options: SummaryOptions } {
 Usage: ts-node summarize.ts <url> [options]
 
 Options:
-  --length <short|medium|long>    Summary length (default: medium)
-  --format <paragraphs|bullets|json>  Output format (default: paragraphs)
-  --metadata                      Include page metadata
-  --save <filename>               Save summary to file
-  --help                          Show this help message
-
-Examples:
-  ts-node summarize.ts https://example.com
-  ts-node summarize.ts https://example.com --length long --metadata
-  ts-node summarize.ts https://example.com --format bullets --save summary
+  --length <short|medium|long>
+  --format <paragraphs|bullets|json>
+  --metadata
+  --save <filename>
+  --help
     `);
     process.exit(0);
   }

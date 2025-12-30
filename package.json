@@ -1,0 +1,26 @@
+{
+  "name": "agent-scrape",
+  "version": "1.0.0",
+  "description": "A simple CLI tool that uses **Puppeteer** and **Google Gemini** to summarize web pages.   It loads a page, extracts the main content, cleans out noise, and generates a concise AI summary.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0xlakshan/agent-scrape.git"
+  },
+  "keywords": [],
+  "author": "lakshan",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/0xlakshan/agent-scrape/issues"
+  },
+  "homepage": "https://github.com/0xlakshan/agent-scrape#readme",
+  "dependencies": {
+    "@ai-sdk/google": "^3.0.1",
+    "ai": "^6.0.3",
+    "puppeteer": "^24.34.0"
+  }
+}

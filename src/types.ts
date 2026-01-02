@@ -36,6 +36,14 @@ export type BatchResult = {
   retries?: number;
 };
 
+export type ContentChunk = {
+  content: string;
+  index: number;
+  total: number;
+  startChar: number;
+  endChar: number;
+};
+
 export class SummarizerError extends Error {
   constructor(
     message: string,

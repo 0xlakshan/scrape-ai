@@ -1,6 +1,7 @@
 import puppeteer, { Page, Browser } from 'puppeteer';
 import { BrowserContext, PageMetadata, SummarizerError } from './types';
 import { removeDuplicateLines } from './utils';
+import { CONFIG } from './config';
 
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
 
@@ -22,7 +23,7 @@ export async function createBrowserContext(): Promise<BrowserContext> {
     const page = await browser.newPage();
     await page.setUserAgent(USER_AGENT);
     await page.setRequestInterception(false);
-    await page.setViewport({ width: 1280, height: 720 });
+    await page.setViewport(CONFIG.BROWSER.VIEWPORT);
     return { browser, page };
   } catch (error) {
     throw new SummarizerError(
@@ -100,7 +101,7 @@ export async function navigate(page: Page, url: string): Promise<void> {
 
     const response = await page.goto(url, {
       waitUntil: 'networkidle0',
-      timeout: 60000,
+      timeout: CONFIG.BROWSER.NAVIGATION_TIMEOUT,
     });
 
     if (!response) {

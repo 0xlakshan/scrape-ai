@@ -1,0 +1,15 @@
+export const CONFIG = {
+  AI: {
+    MAX_CHUNK_CHARS: 32000,
+    RATE_LIMIT_REQUESTS: 2,
+    RATE_LIMIT_WINDOW: 1000,
+  },
+  BROWSER: {
+    NAVIGATION_TIMEOUT: 60000,
+    VIEWPORT: { width: 1280, height: 720 },
+  },
+  PROCESSING: {
+    BATCH_DELAY: 1000,
+    MEMORY_REFRESH_INTERVAL: 10,
+  }
+} as const;

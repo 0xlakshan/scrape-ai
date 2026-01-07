@@ -1,14 +1,57 @@
-import { SummaryOptions, BatchResult, BrowserContext, SummarizerError } from './types';
+import { SummaryOptions, BatchResult, BrowserContext, SummarizerError, PageMetadata } from './types';
 import { isValidUrl, retryWithBackoff, sleep } from './utils';
 import { withBrowser, navigate, extractAndCleanText, extractMetadata, extractLinks } from './browser';
 import { summarizeContent, generateComparativeSummary } from './ai';
 import { formatOutput, formatBatchOutput, saveToFileIfNeeded, loadUrlsFromFile } from './output';
 import { PluginManager, SentimentAnalyzer, KeywordExtractor, ReadabilityScorer } from './plugins';
+import { CONFIG } from './config';
 
 const pluginManager = new PluginManager();
 pluginManager.register(new SentimentAnalyzer());
 pluginManager.register(new KeywordExtractor());
 pluginManager.register(new ReadabilityScorer());
+
+async function cleanupBrowserSession(page: Page): Promise<void> {
+  if (page.isClosed()) return;
+  
+  try {
+    const client = await page.target().createCDPSession();
+    await Promise.allSettled([
+      client.send('Network.clearBrowserCookies'),
+      client.send('Network.clearBrowserCache')
+    ]);
+    await client.detach();
+  } catch (error) {
+    console.warn('CDP cleanup failed:', error);
+  }
+}
+
+async function processPlugins(
+  content: string, 
+  metadata: PageMetadata, 
+  pluginNames: string[]
+): Promise<{ analysis: Record<string, any>; tags: string[] }> {
+  const processors = pluginNames
+    .map(name => pluginManager.getProcessor(name))
+    .filter(Boolean);
+  
+  const results = await Promise.allSettled(
+    processors.map(processor => processor.process(content, metadata))
+  );
+  
+  return results.reduce((acc, result, index) => {
+    if (result.status === 'fulfilled') {
+      const processor = processors[index];
+      if (result.value.analysis) {
+        acc.analysis[processor.name] = result.value.analysis;
+      }
+      if (result.value.tags) {
+        acc.tags.push(...result.value.tags);
+      }
+    }
+    return acc;
+  }, { analysis: {}, tags: [] });
+}
 
 async function processUrl(
   url: string,
@@ -33,22 +76,9 @@ async function processUrl(
         let tags: string[] = [];
 
         if (options.plugins && options.plugins.length > 0) {
-          for (const pluginName of options.plugins) {
-            const processor = pluginManager.getProcessor(pluginName);
-            if (processor) {
-              try {
-                const result = await processor.process(text, metadata);
-                if (result.analysis) {
-                  analysis[processor.name] = result.analysis;
-                }
-                if (result.tags) {
-                  tags.push(...result.tags);
-                }
-              } catch (pluginError) {
-                console.warn(`Plugin ${pluginName} failed:`, pluginError);
-              }
-            }
-          }
+          const pluginResults = await processPlugins(text, metadata, options.plugins);
+          analysis = pluginResults.analysis;
+          tags = pluginResults.tags;
         }
 
         return {
@@ -63,14 +93,7 @@ async function processUrl(
         retries++;
         throw error;
       } finally {
-        try {
-          const client = await ctx.page.target().createCDPSession();
-          await client.send('Network.clearBrowserCookies');
-          await client.send('Network.clearBrowserCache');
-          await client.detach();
-        } catch (cleanupError) {
-          console.warn('Warning: Failed to clear browser cache/cookies:', cleanupError);
-        }
+        await cleanupBrowserSession(ctx.page);
       }
     },
     {
@@ -187,10 +210,10 @@ async function summarizeBatch(urls: string[], options: SummaryOptions = {}) {
         processedCount++;
 
         if (i < urls.length - 1) {
-          await sleep(1000);
+          await sleep(CONFIG.PROCESSING.BATCH_DELAY);
         }
 
-        if (processedCount > 0 && processedCount % 10 === 0 && i < urls.length - 1) {
+        if (processedCount > 0 && processedCount % CONFIG.PROCESSING.MEMORY_REFRESH_INTERVAL === 0 && i < urls.length - 1) {
           console.log('\n🔄 Refreshing browser page to free memory...');
           try {
             await ctx.page.close();

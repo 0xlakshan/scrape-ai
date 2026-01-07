@@ -2,13 +2,14 @@ import { generateText } from 'ai';
 import { google } from '@ai-sdk/google';
 import { SummaryOptions, BatchResult, SummarizerError, ContentChunk } from './types';
 import { RateLimiter, retryWithBackoff } from './utils';
+import { CONFIG } from './config';
 
 const MODEL = google('gemini-2.5-flash');
-const rateLimiter = new RateLimiter(2, 1000);
+const rateLimiter = new RateLimiter(CONFIG.AI.RATE_LIMIT_REQUESTS, CONFIG.AI.RATE_LIMIT_WINDOW);
 
 const CHARS_PER_TOKEN = 4;
 const MAX_CHUNK_TOKENS = 8000;
-const MAX_CHUNK_CHARS = MAX_CHUNK_TOKENS * CHARS_PER_TOKEN;
+const MAX_CHUNK_CHARS = CONFIG.AI.MAX_CHUNK_CHARS;
 
 const summaryStrategies = {
   paragraphs: (length: string) => `Provide a concise ${length} summary in paragraph form.`,

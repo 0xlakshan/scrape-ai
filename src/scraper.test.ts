@@ -65,9 +65,10 @@ describe('Scraper - Retry Logic', () => {
 });
 
 describe('Scraper - Engine Selection', () => {
-  it('throws ConfigError for firecrawl without API key', () => {
-    expect(() => new Scraper({ engine: 'firecrawl' }))
-      .toThrow(ConfigError);
+  it('throws ConfigError for firecrawl without API key', async () => {
+    const scraper = new Scraper({ engine: 'firecrawl' });
+    await expect(scraper.scrape('https://example.com'))
+      .rejects.toThrow(ConfigError);
   });
 
   it('uses puppeteer as default engine', async () => {

@@ -53,7 +53,4 @@ export interface ScraperConfig {
   retry?: RetryConfig;
 }
 
-export abstract class Engine {
-  abstract scrape(url: string, options?: EngineOptions): Promise<RawContent>;
-  abstract dispose(): Promise<void>;
-}
+export { Engine } from './engine';

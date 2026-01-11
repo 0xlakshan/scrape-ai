@@ -1,5 +1,6 @@
 import puppeteer, { Browser } from 'puppeteer';
-import { Engine, type EngineOptions, type RawContent } from '../types';
+import { Engine } from '../engine';
+import type { EngineOptions, RawContent } from '../types';
 
 export class PuppeteerEngine extends Engine {
   private browser: Browser | null = null;

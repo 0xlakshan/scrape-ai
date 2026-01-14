@@ -1,87 +1,97 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Scraper } from './scraper';
-import { EngineError, ConfigError } from './errors';
+import { Scraper } from './sdk';
 
-// Mock engines
-const mockEngine = {
-  scrape: vi.fn(),
-  dispose: vi.fn()
+const mockRawContent = {
+  html: '<html><body>Test</body></html>',
+  text: 'Test content',
+  metadata: { title: 'Test', description: 'Test desc', timestamp: '2024-01-01T00:00:00.000Z' },
 };
 
-vi.mock('./engines', () => ({
-  PuppeteerEngine: vi.fn(() => mockEngine),
-  FirecrawlEngine: vi.fn(() => mockEngine)
-}));
+vi.stubGlobal('fetch', vi.fn());
 
-describe('Scraper - Retry Logic', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('succeeds on first attempt', async () => {
-    const scraper = new Scraper();
-    mockEngine.scrape.mockResolvedValueOnce({
-      html: '<div>content</div>',
-      text: 'content',
-      metadata: { title: 'Test', description: '', timestamp: '2024-01-01' }
-    });
-
-    const result = await scraper.scrape('https://example.com');
-    
-    expect(mockEngine.scrape).toHaveBeenCalledTimes(1);
-    expect(result.url).toBe('https://example.com');
-  });
-
-  it('retries with exponential backoff', async () => {
-    const scraper = new Scraper({ retry: { attempts: 3, delay: 100, backoff: 'exponential' } });
-    
-    mockEngine.scrape
-      .mockRejectedValueOnce(new Error('Fail 1'))
-      .mockRejectedValueOnce(new Error('Fail 2'))
-      .mockResolvedValueOnce({
-        html: '<div>success</div>',
-        text: 'success',
-        metadata: { title: 'Test', description: '', timestamp: '2024-01-01' }
-      });
-
-    const start = Date.now();
-    await scraper.scrape('https://example.com');
-    const duration = Date.now() - start;
-
-    expect(mockEngine.scrape).toHaveBeenCalledTimes(3);
-    expect(duration).toBeGreaterThan(300); // 100ms + 200ms delays
-  });
-
-  it('throws EngineError after max attempts', async () => {
-    const scraper = new Scraper({ retry: { attempts: 2 } });
-    
-    mockEngine.scrape.mockRejectedValue(new Error('Persistent failure'));
-
-    await expect(scraper.scrape('https://example.com'))
-      .rejects.toThrow(EngineError);
-    
-    expect(mockEngine.scrape).toHaveBeenCalledTimes(2);
-  });
+beforeEach(() => {
+  vi.mocked(fetch).mockReset();
 });
 
-describe('Scraper - Engine Selection', () => {
-  it('throws ConfigError for firecrawl without API key', async () => {
-    const scraper = new Scraper({ engine: 'firecrawl' });
-    await expect(scraper.scrape('https://example.com'))
-      .rejects.toThrow(ConfigError);
+describe('Scraper', () => {
+  it('scrapes URL via API', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ success: true, data: mockRawContent }),
+    } as Response);
+
+    const scraper = new Scraper();
+    const result = await scraper.scrape('https://example.com');
+
+    expect(fetch).toHaveBeenCalledWith('http://localhost:3000/scrape', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ url: 'https://example.com', selectors: undefined }),
+    }));
+    expect(result.content).toBe('Test content');
+    expect(result.format).toBe('text');
   });
 
-  it('uses puppeteer as default engine', async () => {
+  it('passes selectors to API', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ success: true, data: mockRawContent }),
+    } as Response);
+
     const scraper = new Scraper();
-    mockEngine.scrape.mockResolvedValueOnce({
-      html: '<div>test</div>',
-      text: 'test',
-      metadata: { title: 'Test', description: '', timestamp: '2024-01-01' }
+    await scraper.scrape('https://example.com', { selectors: ['.content'] });
+
+    expect(fetch).toHaveBeenCalledWith('http://localhost:3000/scrape', expect.objectContaining({
+      body: JSON.stringify({ url: 'https://example.com', selectors: ['.content'] }),
+    }));
+  });
+
+  it('retries on failure', async () => {
+    vi.mocked(fetch)
+      .mockRejectedValueOnce(new Error('Network error'))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ success: true, data: mockRawContent }),
+      } as Response);
+
+    const scraper = new Scraper({ retry: { attempts: 2, delay: 10 } });
+    const result = await scraper.scrape('https://example.com');
+
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(result.content).toBe('Test content');
+  });
+
+  it('throws after max retries', async () => {
+    vi.mocked(fetch).mockRejectedValue(new Error('Network error'));
+
+    const scraper = new Scraper({ retry: { attempts: 2, delay: 10 } });
+
+    await expect(scraper.scrape('https://example.com')).rejects.toThrow('Failed after 2 attempts');
+  });
+
+  it('scrapes batch of URLs', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ success: true, data: mockRawContent }),
+    } as Response);
+
+    const scraper = new Scraper();
+    const results = await scraper.scrapeBatch(['https://a.com', 'https://b.com']);
+
+    expect(results).toHaveLength(2);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('applies postProcess function', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ success: true, data: mockRawContent }),
+    } as Response);
+
+    const scraper = new Scraper();
+    const result = await scraper.scrape('https://example.com', {
+      postProcess: (data) => ({ ...data, content: data.content.toUpperCase() }),
     });
 
-    await scraper.scrape('https://example.com');
-    
-    const { PuppeteerEngine } = await import('./engines');
-    expect(PuppeteerEngine).toHaveBeenCalled();
+    expect(result.content).toBe('TEST CONTENT');
   });
 });

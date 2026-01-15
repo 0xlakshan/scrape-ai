@@ -1,0 +1,22 @@
+{
+  "name": "web-scrape",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "tsx index.ts"
+  },
+  "keywords": [],
+  "author": "lakshan",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "@types/node": "^25.0.8",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@ai-sdk/google": "^3.0.8"
+  }
+}

@@ -16,13 +16,6 @@ export class EngineError extends ScrapeError {
   }
 }
 
-export class TransformError extends ScrapeError {
-  constructor(message: string, cause?: Error) {
-    super(message, "TRANSFORM_ERROR", cause);
-    this.name = "TransformError";
-  }
-}
-
 export class ConfigError extends ScrapeError {
   constructor(message: string) {
     super(message, "CONFIG_ERROR");

@@ -1,12 +1,7 @@
 export { Scraper } from "./sdk";
-export { app, startServer } from "./api";
+export { app, startServer } from "./../../api/index";
 export { Transformer } from "./transformer";
-export {
-  ScrapeError,
-  EngineError,
-  TransformError,
-  ConfigError,
-} from "./errors";
+export { ScrapeError, EngineError, ConfigError } from "./errors";
 
 export type {
   ScrapeOptions,
@@ -16,5 +11,4 @@ export type {
   PageMetadata,
   RawContent,
   RetryConfig,
-  TransformOptions,
 } from "./types";

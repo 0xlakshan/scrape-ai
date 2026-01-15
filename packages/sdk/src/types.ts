@@ -23,7 +23,7 @@ export interface ScrapeOptions {
 
 export interface ScrapedData {
   url: string;
-  content: string;
+  content: RawContent;
   format: OutputFormat;
   metadata: PageMetadata;
   structured?: Record<string, unknown>;
@@ -39,9 +39,4 @@ export interface RawContent {
   html: string;
   text: string;
   metadata: PageMetadata;
-}
-
-export interface TransformOptions {
-  mode?: AIMode;
-  schema?: Record<string, unknown>;
 }

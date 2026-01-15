@@ -4,7 +4,6 @@ import type {
   RawContent,
   RetryConfig,
 } from "./types";
-import { Transformer } from "./transformer";
 import { EngineError } from "./errors";
 
 const API_URL = process.env.SCRAPE_API_URL || "http://localhost:3000";
@@ -81,19 +80,12 @@ export class Scraper {
 
     const model = options.model ?? this.config.model;
     const format = options.output ?? this.config.output ?? "html";
-    const transformer = new Transformer(model);
-
-    const transformed = await transformer.transform(raw, format, {
-      mode: options.aiMode,
-      schema: options.schema,
-    });
 
     let result: ScrapedData = {
       url,
-      content: transformed.content,
+      content: raw,
       format,
       metadata: raw.metadata,
-      structured: transformed.structured,
     };
 
     if (options.postProcess) result = await options.postProcess(result);

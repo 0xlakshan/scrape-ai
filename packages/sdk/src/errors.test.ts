@@ -1,10 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  ScrapeError,
-  EngineError,
-  TransformError,
-  ConfigError,
-} from "./errors";
+import { ScrapeError, EngineError, ConfigError } from "./errors";
 
 describe("Error Classes", () => {
   it("creates ScrapeError with code and cause", () => {
@@ -24,13 +19,6 @@ describe("Error Classes", () => {
     expect(error.name).toBe("EngineError");
     expect(error.code).toBe("ENGINE_ERROR");
     expect(error.cause).toBe(cause);
-  });
-
-  it("creates TransformError with TRANSFORM_ERROR code", () => {
-    const error = new TransformError("Transform failed");
-
-    expect(error.name).toBe("TransformError");
-    expect(error.code).toBe("TRANSFORM_ERROR");
   });
 
   it("creates ConfigError with CONFIG_ERROR code", () => {

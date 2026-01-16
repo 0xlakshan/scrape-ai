@@ -1,5 +1,8 @@
 import express from "express";
 import { chromium, Browser } from "playwright";
+import { generateObject } from "ai";
+import { openai } from "@ai-sdk/openai";
+import { jsonSchema } from "ai";
 
 const app = express();
 app.use(express.json());
@@ -20,12 +23,30 @@ async function closeBrowser() {
   }
 }
 
+function jsonToXml(obj: unknown, root = "root"): string {
+  const convert = (data: unknown, tag: string): string => {
+    if (Array.isArray(data)) {
+      return data.map((item) => convert(item, "item")).join("");
+    }
+    if (typeof data === "object" && data !== null) {
+      const inner = Object.entries(data)
+        .map(([k, v]) => convert(v, k))
+        .join("");
+      return `<${tag}>${inner}</${tag}>`;
+    }
+    return `<${tag}>${String(data)}</${tag}>`;
+  };
+  return `<?xml version="1.0"?>${convert(obj, root)}`;
+}
+
 app.get("/health", (_, res) => res.json({ status: "ok" }));
 
 app.post("/scrape", async (req, res) => {
-  const { url, timeout = 30000 } = req.body;
+  const { url, prompt, model = "gpt-4", schema, output = "json", waitFor, timeout = 30000 } = req.body;
 
-  if (!url) return res.status(400).json({ error: "url is required" });
+  if (!url || !prompt || !schema) {
+    return res.status(400).json({ error: "url, prompt, and schema are required" });
+  }
 
   try {
     const b = await getBrowser();
@@ -33,8 +54,21 @@ app.post("/scrape", async (req, res) => {
 
     try {
       await page.goto(url, { waitUntil: "networkidle", timeout });
+      if (waitFor) await page.waitForTimeout(waitFor);
+
       const html = await page.content();
-      res.json({ success: true, data: { html } });
+
+      const { object } = await generateObject({
+        model: openai(model),
+        schema: jsonSchema(schema),
+        prompt: `${prompt}\n\nHTML:\n${html}`,
+      });
+
+      if (output === "xml") {
+        res.type("application/xml").send(jsonToXml(object, "result"));
+      } else {
+        res.json({ success: true, data: object });
+      }
     } finally {
       await page.close();
     }
@@ -56,14 +90,9 @@ export function startServer(port = process.env.PORT || 3000) {
 
   process.on("SIGTERM", shutdown);
   process.on("SIGINT", shutdown);
-
   return server;
 }
 
 export { app };
 
-// Auto-start when run directly
-const isMain = import.meta.url === `file://${process.argv[1]}`;
-if (isMain) {
-  startServer();
-}
+if (import.meta.url === `file://${process.argv[1]}`) startServer();

@@ -30,9 +30,9 @@ async function closeBrowser() {
 function cleanHtml(html: string): string {
   return (
     html
-      // Remove scripts, styles, comments
-      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
-      .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
+      // Remove scripts, styles, comments with their content
+      .replace(/<script[\s\S]*?<\/script>/gi, "")
+      .replace(/<style[\s\S]*?<\/style>/gi, "")
       .replace(/<!--[\s\S]*?-->/g, "")
       .replace(/<(svg|path|iframe|noscript)\b[^>]*>[\s\S]*?<\/\1>/gi, "")
       // Remove common boilerplate sections

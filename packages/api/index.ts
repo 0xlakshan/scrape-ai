@@ -1,11 +1,15 @@
 import express from "express";
-import { chromium, Browser } from "playwright";
+import type { Browser, BrowserContext } from "playwright";
+import { chromium } from "playwright-extra";
+import stealth from "puppeteer-extra-plugin-stealth";
 import { generateText, Output } from "ai";
 import { google, createGoogleGenerativeAI } from "@ai-sdk/google";
 import { jsonSchema } from "ai";
 
 const app = express();
 app.use(express.json());
+
+chromium.use(stealth());
 
 let browser: Browser | null = null;
 

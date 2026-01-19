@@ -10,6 +10,12 @@ import type {
   CostEstimate,
 } from "../types";
 import { encoding_for_model, type TiktokenModel } from "tiktoken";
+import {
+  BrowserLaunchError,
+  PageLoadError,
+  PageTimeoutError,
+  ContentExtractionError,
+} from "../errors";
 
 chromium.use(stealth());
 
@@ -34,7 +40,16 @@ export class ScrapeEngine {
 
   private async getBrowser(): Promise<Browser> {
     if (!this.browser || !this.browser.isConnected()) {
-      this.browser = await chromium.launch({ headless: this.config.headless });
+      try {
+        this.browser = await chromium.launch({
+          headless: this.config.headless,
+        });
+      } catch (error) {
+        throw new BrowserLaunchError({
+          message: (error as Error).message,
+          originalError: error,
+        });
+      }
     }
     return this.browser;
   }
@@ -88,9 +103,29 @@ export class ScrapeEngine {
       }
 
       const html = await page.content();
+
+      if (!html || html.trim().length === 0) {
+        throw new ContentExtractionError({ url: request.url });
+      }
+
       const cleanedHtml = this.cleanHtml(html);
 
       return { html, cleanedHtml };
+    } catch (error) {
+      const err = error as Error;
+
+      if (err.message.includes("Timeout") || err.message.includes("timeout")) {
+        throw new PageTimeoutError(request.url, request.timeout ?? 30000);
+      }
+
+      if (err instanceof ContentExtractionError) {
+        throw err;
+      }
+
+      throw new PageLoadError(request.url, {
+        message: err.message,
+        originalError: error,
+      });
     } finally {
       await page.close();
       await context.close();

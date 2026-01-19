@@ -1,32 +1,43 @@
-import type { Request, Response } from "express";
+import type { Request, Response, NextFunction } from "express";
 import type {
   TokenUsageRequestBody,
   TokenUsageResponse,
   ErrorResponse,
 } from "../types/api";
 import { ScrapeEngine } from "../scrapeEngine/scrapeEngine";
+import { MissingFieldError, InvalidUrlError } from "../errors";
 
 const scrapeEngine = new ScrapeEngine();
 
-export async function tokenUsageController(
+function validateUrl(url: string): void {
+  try {
+    new URL(url);
+  } catch {
+    throw new InvalidUrlError(url);
+  }
+}
+
+export const tokenUsageController = async (
   req: Request<{}, TokenUsageResponse | ErrorResponse, TokenUsageRequestBody>,
   res: Response<TokenUsageResponse | ErrorResponse>,
-): Promise<void> {
-  const {
-    url,
-    prompt,
-    model = "gemini-2.0-flash-exp",
-    schema,
-    waitFor,
-    timeout = 30000,
-  } = req.body;
-
-  if (!url || !prompt || !schema) {
-    res.status(400).json({ error: "url, prompt, and schema are required" });
-    return;
-  }
-
+  next: NextFunction,
+): Promise<void> => {
   try {
+    const {
+      url,
+      prompt,
+      model = "gemini-2.0-flash-exp",
+      schema,
+      waitFor,
+      timeout = 30000,
+    } = req.body;
+
+    if (!url) throw new MissingFieldError("url");
+    if (!prompt) throw new MissingFieldError("prompt");
+    if (!schema) throw new MissingFieldError("schema");
+
+    validateUrl(url);
+
     const { cleanedHtml } = await scrapeEngine.scrape({
       url,
       waitFor,
@@ -47,10 +58,10 @@ export async function tokenUsageController(
       tokens,
       estimatedCost,
     });
-  } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
+  } catch (error) {
+    next(error);
   }
-}
+};
 
 export async function closeScraper(): Promise<void> {
   await scrapeEngine.closeBrowser();

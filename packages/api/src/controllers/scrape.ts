@@ -1,4 +1,4 @@
-import type { Request, Response } from "express";
+import type { Request, Response, NextFunction } from "express";
 import { generateText, Output } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { jsonSchema } from "ai";
@@ -9,65 +9,91 @@ import type {
 } from "../types";
 import { ScrapeEngine } from "../scrapeEngine/scrapeEngine";
 import jsonToXml from "../utils/jsonToXml";
+import {
+  MissingFieldError,
+  InvalidUrlError,
+  GenerationError,
+  ModelError,
+} from "../errors";
 
 const scrapeEngine = new ScrapeEngine();
 
-export async function scrapeController(
+function validateUrl(url: string): void {
+  try {
+    new URL(url);
+  } catch {
+    throw new InvalidUrlError(url);
+  }
+}
+
+export const scrapeController = async (
   req: Request<{}, ScrapeResponse | ErrorResponse, ScrapeRequestBody>,
   res: Response<ScrapeResponse | ErrorResponse>,
-): Promise<void> {
-  const {
-    url,
-    prompt,
-    model,
-    schema,
-    output = "json",
-    waitFor,
-    timeout = 30000,
-  } = req.body;
-
-  if (!url || !prompt || !schema || !model) {
-    res
-      .status(400)
-      .json({ error: "url, prompt, schema and model are required" });
-    return;
-  }
-
+  next: NextFunction,
+): Promise<void> => {
   try {
+    const {
+      url,
+      prompt,
+      model,
+      schema,
+      output = "json",
+      waitFor,
+      timeout = 30000,
+    } = req.body;
+
+    if (!url) throw new MissingFieldError("url");
+    if (!prompt) throw new MissingFieldError("prompt");
+    if (!schema) throw new MissingFieldError("schema");
+    if (!model) throw new MissingFieldError("model");
+
+    validateUrl(url);
+
     const { cleanedHtml } = await scrapeEngine.scrape({
       url,
       waitFor,
       timeout,
     });
 
-    // Write to a file for debugging
-    // const fs = await import("fs/promises");
-    // await fs.writeFile("debug-output.txt", cleanedHtml || "", "utf-8");
-    // console.log("Output written to debug-output.txt");
-
     const google = createGoogleGenerativeAI({
       apiKey: process.env.GOOGLE_API_KEY,
     });
 
-    const result = await generateText({
-      model: google(model),
-      output: Output.object({ schema: jsonSchema(schema) }),
-      prompt: `${prompt}\n\nHTML:\n${cleanedHtml}`,
-    });
+    try {
+      // Write to a file for debugging
+      // const fs = await import("fs/promises");
+      // await fs.writeFile("debug-output.txt", cleanedHtml || "", "utf-8");
+      // console.log("Output written to debug-output.txt");
 
-    if (output === "xml") {
-      // TODO: Return proper XML
-      res.type("application/xml").send({
-        success: true,
-        data: jsonToXml(result, "result"),
+      const result = await generateText({
+        model: google(model),
+        output: Output.object({ schema: jsonSchema(schema) }),
+        prompt: `${prompt}\n\nHTML:\n${cleanedHtml}`,
       });
-    } else {
-      res.json({ success: true, data: result });
+
+      if (output === "xml") {
+        // TODO: Handle XML export
+        // jsonToXml(result, "result")
+      } else {
+        res.json({ success: true, data: result });
+      }
+    } catch (error) {
+      const err = error as Error;
+
+      if (err.message.includes("google") || err.message.includes("model")) {
+        throw new ModelError(model, { message: err.message });
+      }
+
+      throw new GenerationError({
+        message: err.message,
+        model,
+        originalError: error,
+      });
     }
-  } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
+  } catch (error) {
+    next(error);
   }
-}
+};
 
 export async function closeScraper(): Promise<void> {
   await scrapeEngine.closeBrowser();

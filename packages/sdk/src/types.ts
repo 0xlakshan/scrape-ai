@@ -1,6 +1,7 @@
 import type { z } from "zod";
 
-export type OutputFormat = "json" | "xml";
+// TODO: Add xml support preserving output format
+export type OutputFormat = "json";
 
 export interface ScrapeOptions<T extends z.ZodType = z.ZodType> {
   output?: OutputFormat;
